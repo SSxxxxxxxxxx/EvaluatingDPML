@@ -1,4 +1,4 @@
-import sys
+import sys, datetime
 import os
 import argparse
 import pickle
@@ -21,7 +21,7 @@ RESULT_PATH = 'results/'
 if not os.path.exists(RESULT_PATH):
     os.makedirs(RESULT_PATH)
 
-def run_experiment(args):
+def run_experiment(args, run_anyway=False):
     print('-' * 10 + 'TRAIN TARGET' + '-' * 10 + '\n')
     dataset = load_data('target_data.npz', args)
     train_x, train_y, test_x, test_y = dataset

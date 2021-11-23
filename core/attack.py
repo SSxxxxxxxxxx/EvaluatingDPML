@@ -31,24 +31,49 @@ def load_attack_data():
     return train_x.astype('float32'), train_y.astype('int32'), test_x.astype('float32'), test_y.astype('int32')
 
 
-def train_target_model(args, dataset=None, epochs=100, batch_size=100, learning_rate=0.01, clipping_threshold=1, l2_ratio=1e-7, n_hidden=50, model='nn', privacy='no_privacy', dp='dp', epsilon=0.5, delta=1e-5, save=True):
+def train_target_model(args, dataset=None, epochs=100, batch_size=100, learning_rate=0.01, clipping_threshold=1, l2_ratio=1e-7, n_hidden=50,
+                       model='nn', privacy='no_privacy', dp='dp', epsilon=0.5, delta=1e-5, save=True):
+    '''
+
+
+    :param args:
+    :param dataset:
+    :param epochs:
+    :param batch_size:
+    :param learning_rate:
+    :param clipping_threshold:
+    :param l2_ratio:
+    :param n_hidden:
+    :param model:
+    :param privacy:
+    :param dp:
+    :param epsilon:
+    :param delta:
+    :param save:
+    :return: (
+        array of predictions for each datapoint,
+        array with 1 if datapoint of that index was used for training lese 0,
+        list of classes in the same order as in a prediction,
+        classifier model,
+        (finale training loss, final training accuracy, final evaluation loss, final evaluations accuracy))
+    '''
     if dataset == None:
         dataset = load_data('target_data.npz', args)
     train_x, train_y, test_x, test_y = dataset
 
     classifier, aux = train_model(
-        dataset, 
-        n_hidden=n_hidden, 
-        epochs=epochs, 
-        learning_rate=learning_rate, 
-        clipping_threshold=clipping_threshold, 
-        batch_size=batch_size, 
-        model=model, 
-        l2_ratio=l2_ratio, 
-        silent=False, 
-        privacy=privacy, 
-        dp=dp, 
-        epsilon=epsilon, 
+        dataset,
+        n_hidden=n_hidden,
+        epochs=epochs,
+        learning_rate=learning_rate,
+        clipping_threshold=clipping_threshold,
+        batch_size=batch_size,
+        model=model,
+        l2_ratio=l2_ratio,
+        silent=False,
+        privacy=privacy,
+        dp=dp,
+        epsilon=epsilon,
         delta=delta)
     # test data for attack model
     attack_x, attack_y = [], []
@@ -64,7 +89,7 @@ def train_target_model(args, dataset=None, epochs=100, batch_size=100, learning_
 
     attack_x.append(pred_scores)
     attack_y.append(np.ones(train_x.shape[0]))
-    
+
     # data not used in training, label is 0
     pred_input_fn = tf.compat.v1.estimator.inputs.numpy_input_fn(
         x={'x': test_x},
@@ -73,7 +98,7 @@ def train_target_model(args, dataset=None, epochs=100, batch_size=100, learning_
 
     predictions = classifier.predict(input_fn=pred_input_fn)
     _, pred_scores = get_predictions(predictions)
-    
+
     attack_x.append(pred_scores)
     attack_y.append(np.zeros(test_x.shape[0]))
 
@@ -89,28 +114,29 @@ def train_target_model(args, dataset=None, epochs=100, batch_size=100, learning_
     return attack_x, attack_y, classes, classifier, aux
 
 
-def train_shadow_models(args, n_hidden=50, epochs=100, n_shadow=20, learning_rate=0.05, batch_size=100, l2_ratio=1e-7, model='nn', privacy='no_privacy', dp='dp', epsilon=0.5, delta=1e-5, save=True):
+def train_shadow_models(args, n_hidden=50, epochs=100, n_shadow=20, learning_rate=0.05, batch_size=100, l2_ratio=1e-7, model='nn',
+                        privacy='no_privacy', dp='dp', epsilon=0.5, delta=1e-5, save=True):
     attack_x, attack_y = [], []
     classes = []
     for i in range(n_shadow):
-        #print('Training shadow model {}'.format(i))
+        print('Training shadow model {}'.format(i))
         dataset = load_data('shadow{}_data.npz'.format(i), args)
         train_x, train_y, test_x, test_y = dataset
 
         # train model
         classifier = train_model(
-            dataset, 
-            n_hidden=n_hidden, 
-            epochs=epochs, 
-            learning_rate=learning_rate, 
-            batch_size=batch_size, 
-            model=model, 
-            l2_ratio=l2_ratio, 
-            privacy=privacy, 
-            dp=dp, 
-            epsilon=epsilon, 
+            dataset,
+            n_hidden=n_hidden,
+            epochs=epochs,
+            learning_rate=learning_rate,
+            batch_size=batch_size,
+            model=model,
+            l2_ratio=l2_ratio,
+            privacy=privacy,
+            dp=dp,
+            epsilon=epsilon,
             delta=delta)
-        #print('Gather training data for attack model')
+        # print('Gather training data for attack model')
         attack_i_x, attack_i_y = [], []
 
         # data used in training, label is 1
@@ -121,10 +147,10 @@ def train_shadow_models(args, n_hidden=50, epochs=100, n_shadow=20, learning_rat
 
         predictions = classifier.predict(input_fn=pred_input_fn)
         _, pred_scores = get_predictions(predictions)
-    
+
         attack_i_x.append(pred_scores)
         attack_i_y.append(np.ones(train_x.shape[0]))
-    
+
         # data not used in training, label is 0
         pred_input_fn = tf.compat.v1.estimator.inputs.numpy_input_fn(
             x={'x': test_x},
@@ -133,10 +159,10 @@ def train_shadow_models(args, n_hidden=50, epochs=100, n_shadow=20, learning_rat
 
         predictions = classifier.predict(input_fn=pred_input_fn)
         _, pred_scores = get_predictions(predictions)
-    
+
         attack_i_x.append(pred_scores)
         attack_i_y.append(np.zeros(test_x.shape[0]))
-        
+
         attack_x += attack_i_x
         attack_y += attack_i_y
         classes.append(np.concatenate([train_y, test_y]))
@@ -168,21 +194,21 @@ def train_attack_model(classes, dataset=None, n_hidden=50, learning_rate=0.01, b
     shadow_pred_scores, target_pred_scores = [], []
     shadow_class_labels, target_class_labels = [], []
     for c in unique_classes:
-        #print('Training attack model for class {}...'.format(c))
+        # print('Training attack model for class {}...'.format(c))
         c_train_indices = train_indices[train_classes == c]
         c_train_x, c_train_y = train_x[c_train_indices], train_y[c_train_indices]
         c_test_indices = test_indices[test_classes == c]
         c_test_x, c_test_y = test_x[c_test_indices], test_y[c_test_indices]
         c_dataset = (c_train_x, c_train_y, c_test_x, c_test_y)
         classifier = train_model(
-            c_dataset, 
-            n_hidden=n_hidden, 
-            epochs=epochs, 
-            learning_rate=learning_rate, 
-            batch_size=batch_size, 
-            model=model, 
+            c_dataset,
+            n_hidden=n_hidden,
+            epochs=epochs,
+            learning_rate=learning_rate,
+            batch_size=batch_size,
+            model=model,
             l2_ratio=l2_ratio)
-        
+
         pred_input_fn = tf.compat.v1.estimator.inputs.numpy_input_fn(
             x={'x': c_train_x},
             num_epochs=1,
@@ -191,7 +217,7 @@ def train_attack_model(classes, dataset=None, n_hidden=50, learning_rate=0.01, b
         c_pred_y, c_pred_scores = get_predictions(predictions)
         shadow_membership.append(c_train_y)
         shadow_pred_scores.append(c_pred_scores)
-        shadow_class_labels.append([c]*len(c_train_indices))
+        shadow_class_labels.append([c] * len(c_train_indices))
 
         pred_input_fn = tf.compat.v1.estimator.inputs.numpy_input_fn(
             x={'x': c_test_x},
@@ -202,7 +228,7 @@ def train_attack_model(classes, dataset=None, n_hidden=50, learning_rate=0.01, b
         pred_y.append(c_pred_y)
         target_membership.append(c_test_y)
         target_pred_scores.append(c_pred_scores)
-        target_class_labels.append([c]*len(c_test_indices))
+        target_class_labels.append([c] * len(c_test_indices))
 
     print('-' * 10 + 'FINAL EVALUATION' + '-' * 10 + '\n')
     pred_y = np.concatenate(pred_y)
@@ -219,6 +245,17 @@ def train_attack_model(classes, dataset=None, n_hidden=50, learning_rate=0.01, b
 
 
 def save_data(args):
+    '''
+    Saves randomly sampled
+        args.target_data_size datapoints                            for training,
+        (1+ args.target_test_train_ratio) * args.target_data_size   for testing,
+    to *target_data.npz* for the main model to train on.
+
+    The same amount of data (sampled from the remaining data) is saved args.n_shadow times to a *shadow<index>_data.npz*
+
+    :param args:
+    :return: None
+    '''
     print('-' * 10 + 'SAVING DATA TO DISK' + '-' * 10 + '\n')
     target_size = args.target_data_size
     gamma = args.target_test_train_ratio
@@ -226,17 +263,17 @@ def save_data(args):
     if not os.path.exists(DATA_PATH):
         os.makedirs(DATA_PATH)
 
-    x = pickle.load(open('../dataset/'+args.train_dataset+'_features.p', 'rb'))
-    y = pickle.load(open('../dataset/'+args.train_dataset+'_labels.p', 'rb'))
+    x = pickle.load(open('../dataset/' + args.train_dataset + '_features.p', 'rb'))
+    y = pickle.load(open('../dataset/' + args.train_dataset + '_labels.p', 'rb'))
     x = np.array(x, dtype=np.float32)
     y = np.array(y, dtype=np.int32)
     print(x.shape, y.shape)
 
     # assert if data is enough for sampling target data
-    assert(len(x) >= (1 + gamma) * target_size)
+    assert (len(x) >= (1 + gamma) * target_size)
     x, train_x, y, train_y = train_test_split(x, y, test_size=target_size, stratify=y)
     print("Training set size:  X: {}, y: {}".format(train_x.shape, train_y.shape))
-    x, test_x, y, test_y = train_test_split(x, y, test_size=int(gamma*target_size), stratify=y)
+    x, test_x, y, test_y = train_test_split(x, y, test_size=int(gamma * target_size), stratify=y)
     print("Test set size:  X: {}, y: {}".format(test_x.shape, test_y.shape))
 
     # save target data
@@ -244,12 +281,12 @@ def save_data(args):
     np.savez(DATA_PATH + 'target_data.npz', train_x, train_y, test_x, test_y)
 
     # assert if remaining data is enough for sampling shadow data
-    assert(len(x) >= (1 + gamma) * target_size)
+    assert (len(x) >= (1 + gamma) * target_size)
 
     # save shadow data
     for i in range(args.n_shadow):
         print('Saving data for shadow model {}'.format(i))
-        train_x, test_x, train_y, test_y = train_test_split(x, y, train_size=target_size, test_size=int(gamma*target_size), stratify=y)
+        train_x, test_x, train_y, test_y = train_test_split(x, y, train_size=target_size, test_size=int(gamma * target_size), stratify=y)
         print("Training set size:  X: {}, y: {}".format(train_x.shape, train_y.shape))
         print("Test set size:  X: {}, y: {}".format(test_x.shape, test_y.shape))
         np.savez(DATA_PATH + 'shadow{}_data.npz'.format(i), train_x, train_y, test_x, test_y)
@@ -268,11 +305,11 @@ def load_data(data_name, args):
     train_y = np.array(train_y, dtype=np.int32)
     test_y = np.array(test_y, dtype=np.int32)
 
-    return train_x, train_y, test_x[:int(gamma*target_size)], test_y[:int(gamma*target_size)]
+    return train_x, train_y, test_x[:int(gamma * target_size)], test_y[:int(gamma * target_size)]
 
 
 def shokri_membership_inference(args, attack_test_x, attack_test_y, test_classes):
-    print('-' * 10 + 'SHOKRI\'S MEMBERSHIP INFERENCE' + '-' * 10 + '\n')    
+    print('-' * 10 + 'SHOKRI\'S MEMBERSHIP INFERENCE' + '-' * 10 + '\n')
     print('-' * 10 + 'TRAIN SHADOW' + '-' * 10 + '\n')
     attack_train_x, attack_train_y, train_classes = train_shadow_models(
         args=args,
@@ -299,11 +336,11 @@ def shokri_membership_inference(args, attack_test_x, attack_test_y, test_classes
 
 
 def yeom_membership_inference(per_instance_loss, membership, train_loss, test_loss=None):
-    print('-' * 10 + 'YEOM\'S MEMBERSHIP INFERENCE' + '-' * 10 + '\n')    
+    print('-' * 10 + 'YEOM\'S MEMBERSHIP INFERENCE' + '-' * 10 + '\n')
     if test_loss == None:
-    	pred_membership = np.where(per_instance_loss <= train_loss, 1, 0)
+        pred_membership = np.where(per_instance_loss <= train_loss, 1, 0)
     else:
-    	pred_membership = np.where(stats.norm(0, train_loss).pdf(per_instance_loss) >= stats.norm(0, test_loss).pdf(per_instance_loss), 1, 0)
+        pred_membership = np.where(stats.norm(0, train_loss).pdf(per_instance_loss) >= stats.norm(0, test_loss).pdf(per_instance_loss), 1, 0)
     prety_print_result(membership, pred_membership)
     return pred_membership
 
@@ -312,7 +349,7 @@ def proposed_membership_inference(v_dataset, true_x, true_y, classifier, per_ins
     print('-' * 10 + 'PROPOSED MEMBERSHIP INFERENCE' + '-' * 10 + '\n')
     v_train_x, v_train_y, v_test_x, v_test_y = v_dataset
     v_true_x = np.vstack([v_train_x, v_test_x])
-    v_true_y = np.concatenate([v_train_y, v_test_y])    
+    v_true_y = np.concatenate([v_train_y, v_test_y])
     v_pred_y, v_membership, v_test_classes, v_classifier, aux = train_target_model(
         args=args,
         dataset=v_dataset,
@@ -371,8 +408,8 @@ def get_merlin_ratio(true_x, true_y, classifier, per_instance_loss, noise_params
     for t in range(max_t):
         noisy_x = true_x + generate_noise(true_x.shape, true_x.dtype, noise_params)
         pred_input_fn = tf.compat.v1.estimator.inputs.numpy_input_fn(
-            x={'x': noisy_x}, 
-           num_epochs=1,
+            x={'x': noisy_x},
+            num_epochs=1,
             shuffle=False)
         predictions = classifier.predict(input_fn=pred_input_fn)
         _, pred_y = get_predictions(predictions)
@@ -385,10 +422,10 @@ def yeom_attribute_inference(true_x, true_y, classifier, membership, features, t
     print('-' * 10 + 'YEOM\'S ATTRIBUTE INFERENCE' + '-' * 10 + '\n')
     pred_membership_all = []
     for feature in features:
-        orignial_attribute = np.copy(true_x[:,feature])
+        orignial_attribute = np.copy(true_x[:, feature])
         low_value, high_value, true_attribute_value = get_attribute_variations(true_x, feature)
-        
-        true_x[:,feature] = low_value
+
+        true_x[:, feature] = low_value
         pred_input_fn = tf.compat.v1.estimator.inputs.numpy_input_fn(
             x={'x': true_x},
             num_epochs=1,
@@ -397,8 +434,8 @@ def yeom_attribute_inference(true_x, true_y, classifier, membership, features, t
         _, low_op = get_predictions(predictions)
         low_op = low_op.astype('float32')
         low_op = log_loss(true_y, low_op)
-        
-        true_x[:,feature] = high_value
+
+        true_x[:, feature] = high_value
         pred_input_fn = tf.compat.v1.estimator.inputs.numpy_input_fn(
             x={'x': true_x},
             num_epochs=1,
@@ -407,21 +444,21 @@ def yeom_attribute_inference(true_x, true_y, classifier, membership, features, t
         _, high_op = get_predictions(predictions)
         high_op = high_op.astype('float32')
         high_op = log_loss(true_y, high_op)
-        
+
         high_prob = np.sum(true_attribute_value) / len(true_attribute_value)
         low_prob = 1 - high_prob
-        
+
         if test_loss == None:
             pred_attribute_value = np.where(low_prob * stats.norm(0, train_loss).pdf(low_op) >= high_prob * stats.norm(0, train_loss).pdf(high_op), 0, 1)
-            mask = [1]*len(pred_attribute_value)
+            mask = [1] * len(pred_attribute_value)
         else:
             low_mem = np.where(stats.norm(0, train_loss).pdf(low_op) >= stats.norm(0, test_loss).pdf(low_op), 1, 0)
             high_mem = np.where(stats.norm(0, train_loss).pdf(high_op) >= stats.norm(0, test_loss).pdf(high_op), 1, 0)
             pred_attribute_value = [np.argmax([low_prob * a, high_prob * b]) for a, b in zip(low_mem, high_mem)]
             mask = [a | b for a, b in zip(low_mem, high_mem)]
-        
-        pred_membership = mask & (pred_attribute_value ^ true_attribute_value ^ [1]*len(pred_attribute_value))
+
+        pred_membership = mask & (pred_attribute_value ^ true_attribute_value ^ [1] * len(pred_attribute_value))
         prety_print_result(membership, pred_membership)
         pred_membership_all.append(pred_membership)
-        true_x[:,feature] = orignial_attribute
+        true_x[:, feature] = orignial_attribute
     return pred_membership_all

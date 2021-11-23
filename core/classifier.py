@@ -83,8 +83,7 @@ def get_model(features, labels, mode, params):
                             l2_norm_clip=clipping_threshold,
                             noise_multiplier=sigma,
                             num_microbatches=batch_size,
-                            learning_rate=learning_rate,
-                            ledger=None)
+                            learning_rate=learning_rate)
             opt_loss = vector_loss
         else:
             optimizer = AdamOptimizer(learning_rate=learning_rate)
@@ -109,6 +108,25 @@ def get_model(features, labels, mode, params):
 
 
 def train(dataset, n_hidden=50, batch_size=100, epochs=100, learning_rate=0.01, clipping_threshold=1, model='nn', l2_ratio=1e-7, silent=True, non_linearity='relu', privacy='no_privacy', dp = 'dp', epsilon=0.5, delta=1e-5):
+    '''
+    Creating and training a classifier
+
+    :param dataset: tuple of (train_features, train_labels, test_features, test_labels)
+    :param n_hidden: size of the hidden layers
+    :param batch_size: batch size for training
+    :param epochs: number of epochs to be trained
+    :param learning_rate: learning rate
+    :param clipping_threshold: clipping threshold
+    :param model: type of the moddel: 'nn' or 'cnn' or else softmax regression
+    :param l2_ratio: l2_ratio
+    :param silent: should model be evaluated? (warning: silent flag is only used for target model training)
+    :param non_linearity: activation function
+    :param privacy: Train with privacy? 'grad_pert'|'no_privacy'
+    :param dp: DP-definition: 'adv_cmp'|'zcdp'|'rdp'|'gdp'|(else)'dp'
+    :param epsilon: epsilon
+    :param delta: delta
+    :return: (classifier model, (finale training loss, final training accuracy, final evaluation loss, final evaluations accuracy))
+    '''
     train_x, train_y, test_x, test_y = dataset
 
     n_in = train_x.shape[1]
