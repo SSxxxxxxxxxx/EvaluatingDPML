@@ -22,6 +22,16 @@ if not os.path.exists(RESULT_PATH):
     os.makedirs(RESULT_PATH)
 
 def run_experiment(args, run_anyway=False):
+    if args.target_privacy == 'no_privacy':
+        if os.path.exists(RESULT_PATH + args.train_dataset + '/' + args.target_model + '_no_privacy_' + str(args.target_l2_ratio) + '.p'):
+            print('Results already found for',args)
+            return
+    else:
+        if os.path.exists(RESULT_PATH + args.train_dataset + '/' + args.target_model + '_' + args.target_privacy + '_' + args.target_dp + '_' + str(
+                    args.target_epsilon) + '_' + str(args.run) + '.p'):
+            print('Results already found for', args)
+            return
+
     print('-' * 10 + 'TRAIN TARGET' + '-' * 10 + '\n')
     dataset = load_data('target_data.npz', args)
     train_x, train_y, test_x, test_y = dataset
