@@ -12,3 +12,4 @@ traceEvents.json
 slurm-*.out
 joblog.txt
 *.pyc
+

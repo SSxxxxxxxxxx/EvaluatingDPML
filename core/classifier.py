@@ -8,13 +8,16 @@ from tensorflow_privacy.privacy.analysis.rdp_accountant import compute_rdp
 from tensorflow_privacy.privacy.analysis.rdp_accountant import get_privacy_spent
 from tensorflow_privacy.privacy.optimizers import dp_optimizer
 
-LOGGING = False # enables tf.train.ProfilerHook (see use below)
+LOGGING = False  # enables tf.train.ProfilerHook (see use below)
 LOG_DIR = 'log'
 CHECKPOINT_DIR = '__temp_files'
 
 AdamOptimizer = tf.compat.v1.train.AdamOptimizer
 
+
 def get_predictions(predictions):
+    if isinstance(predictions,dict):
+        return predictions['classes'], predictions['probabilities']
     pred_y, pred_scores = [], []
     val = next(predictions, None)
     while val is not None:
@@ -27,14 +30,14 @@ def get_predictions(predictions):
 def get_model(features, labels, mode, params):
     n, n_in, n_hidden, n_out, non_linearity, model, privacy, dp, epsilon, delta, batch_size, learning_rate, clipping_threshold, l2_ratio, epochs = params
     if model == 'nn':
-        #print('Using neural network...')
+        # print('Using neural network...')
         input_layer = tf.reshape(features['x'], [-1, n_in])
         h1 = tf.keras.layers.Dense(n_hidden, activation=non_linearity, kernel_regularizer=tf.keras.regularizers.l2(l2_ratio)).apply(input_layer)
         h2 = tf.keras.layers.Dense(n_hidden, activation=non_linearity, kernel_regularizer=tf.keras.regularizers.l2(l2_ratio)).apply(h1)
         pre_logits = tf.keras.layers.Dense(n_out, kernel_regularizer=tf.keras.regularizers.l2(l2_ratio)).apply(h2)
         logits = tf.keras.layers.Softmax().apply(pre_logits)
     elif model == 'cnn':
-        #print('Using convolution neural network...') # use only on Cifar-100
+        # print('Using convolution neural network...') # use only on Cifar-100
         input_layer = tf.reshape(features['x'], [-1, 32, 32, 3])
         y = tf.keras.layers.Conv2D(32, kernel_size=(3, 3), activation=non_linearity).apply(input_layer)
         y = tf.keras.layers.MaxPooling2D(pool_size=(2, 2)).apply(y)
@@ -49,13 +52,13 @@ def get_model(features, labels, mode, params):
         pre_logits = tf.keras.layers.Dense(n_out, kernel_regularizer=tf.keras.regularizers.l2(l2_ratio)).apply(h2)
         logits = tf.keras.layers.Softmax().apply(pre_logits)
     else:
-        #print('Using softmax regression...')
+        # print('Using softmax regression...')
         input_layer = tf.reshape(features['x'], [-1, n_in])
         logits = tf.keras.layers.Dense(n_out, activation=tf.nn.softmax, kernel_regularizer=tf.keras.regularizers.l2(l2_ratio)).apply(input_layer)
-    
+
     predictions = {
-      "classes": tf.argmax(input=logits, axis=1),
-      "probabilities": logits
+        "classes": tf.argmax(input=logits, axis=1),
+        "probabilities": logits
     }
 
     if mode == tf.estimator.ModeKeys.PREDICT:
@@ -66,24 +69,29 @@ def get_model(features, labels, mode, params):
     scalar_loss = tf.reduce_mean(vector_loss)
 
     if mode == tf.estimator.ModeKeys.TRAIN:
-        
+
         if privacy == 'grad_pert':
             if dp == 'adv_cmp':
-                sigma = np.sqrt(epochs * np.log(2.5 * epochs / delta)) * (np.sqrt(np.log(2 / delta) + 2 * epsilon) + np.sqrt(np.log(2 / delta))) / epsilon
+                sigma = np.sqrt(epochs * np.log(2.5 * epochs / delta)) * (
+                            np.sqrt(np.log(2 / delta) + 2 * epsilon) + np.sqrt(np.log(2 / delta))) / epsilon
             elif dp == 'zcdp':
                 sigma = np.sqrt(epochs / 2) * (np.sqrt(np.log(1 / delta) + epsilon) + np.sqrt(np.log(1 / delta))) / epsilon
             elif dp == 'rdp':
-                sigma = rdp_noise_multiplier[epochs][epsilon]
+                from paramsearch.sigmaSearcher import get_rdp_sigma
+                sigma = get_rdp_sigma(epsilon,n,epochs,batch_size,delta)
+                # sigma = rdp_noise_multiplier[epochs][epsilon]
             elif dp == 'gdp':
-                sigma = gdp_noise_multiplier[epochs][epsilon]
-            else: # if dp == 'dp'
+                from paramsearch.sigmaSearcher import get_gdp_sigma
+                sigma = get_gdp_sigma(epsilon,n,epochs,batch_size,delta)
+                # sigma = gdp_noise_multiplier[epochs][epsilon]
+            else:  # if dp == 'dp'
                 sigma = epochs * np.sqrt(2 * np.log(1.25 * epochs / delta)) / epsilon
-    
+
             optimizer = dp_optimizer.DPAdamGaussianOptimizer(
-                            l2_norm_clip=clipping_threshold,
-                            noise_multiplier=sigma,
-                            num_microbatches=batch_size,
-                            learning_rate=learning_rate)
+                l2_norm_clip=clipping_threshold,
+                noise_multiplier=sigma,
+                num_microbatches=batch_size,
+                learning_rate=learning_rate)
             opt_loss = vector_loss
         else:
             optimizer = AdamOptimizer(learning_rate=learning_rate)
@@ -99,7 +107,7 @@ def get_model(features, labels, mode, params):
             'accuracy':
                 tf.compat.v1.metrics.accuracy(
                     labels=labels,
-                     predictions=predictions["classes"])
+                    predictions=predictions["classes"])
         }
 
         return tf.estimator.EstimatorSpec(mode=mode,
@@ -107,7 +115,8 @@ def get_model(features, labels, mode, params):
                                           eval_metric_ops=eval_metric_ops)
 
 
-def train(dataset, n_hidden=50, batch_size=100, epochs=100, learning_rate=0.01, clipping_threshold=1, model='nn', l2_ratio=1e-7, silent=True, non_linearity='relu', privacy='no_privacy', dp = 'dp', epsilon=0.5, delta=1e-5):
+def train(dataset, n_hidden=50, batch_size=100, epochs=100, learning_rate=0.01, clipping_threshold=1, model='nn', l2_ratio=1e-7, silent=True,
+          non_linearity='relu', privacy='no_privacy', dp='dp', epsilon=0.5, delta=1e-5):
     '''
     Creating and training a classifier
 
@@ -135,28 +144,39 @@ def train(dataset, n_hidden=50, batch_size=100, epochs=100, learning_rate=0.01, 
     if batch_size > len(train_y):
         batch_size = len(train_y)
 
-    if not os.path.exists(CHECKPOINT_DIR):
-        os.makedirs(CHECKPOINT_DIR)
-    
+    import random,string,time
+    r = random.Random()
+    r.seed(r.random()*time.time())
+    checkdir = os.path.join(os.environ['CHECKPOINT_DIR'],''.join(r.choice(string.ascii_letters+string.digits) for _ in range(10)))
+    if not os.path.exists(checkdir):
+        os.makedirs(checkdir)
+
+
     classifier = tf.estimator.Estimator(
-            model_fn=get_model,
-            #model_dir=CHECKPOINT_DIR,
-            params = [
-                train_x.shape[0],
-                n_in,
-                n_hidden,
-                n_out,
-                non_linearity,
-                model,
-                privacy,
-                dp,
-                epsilon,
-                delta,
-                batch_size,
-                learning_rate,
-                clipping_threshold,
-                l2_ratio,
-                epochs])
+        model_fn=get_model,
+        model_dir=checkdir,
+        params=[
+            train_x.shape[0],
+            n_in,
+            n_hidden,
+            n_out,
+            non_linearity,
+            model,
+            privacy,
+            dp,
+            epsilon,
+            delta,
+            batch_size,
+            learning_rate,
+            clipping_threshold,
+            l2_ratio,
+            epochs]
+        )
+    '''
+    , config=tf.estimator.RunConfig(save_summary_steps=None,
+                                        save_checkpoints_secs=None,
+                                        save_checkpoints_steps=None)
+    '''
 
     train_input_fn = tf.compat.v1.estimator.inputs.numpy_input_fn(
         x={'x': train_x},
@@ -190,9 +210,9 @@ def train(dataset, n_hidden=50, batch_size=100, epochs=100, learning_rate=0.01, 
         # by running `combine_traces.py`
 
         classifier.train(input_fn=train_input_fn,
-                steps=steps_per_epoch,
-                hooks=hooks)
-    
+                         steps=steps_per_epoch,
+                         hooks=hooks)
+
         if not silent:
             eval_results = classifier.evaluate(input_fn=train_eval_input_fn)
             print('Train loss after %d epochs is: %.3f' % (epoch, eval_results['loss']))

@@ -1,6 +1,8 @@
 import os
 import argparse
 import pickle
+import random
+
 import numpy as np
 import tensorflow as tf
 
@@ -81,8 +83,8 @@ def train_target_model(args, dataset=None, epochs=100, batch_size=100, learning_
     # data used in training, label is 1
     pred_input_fn = tf.compat.v1.estimator.inputs.numpy_input_fn(
         x={'x': train_x},
-        num_epochs=1,
-        shuffle=False)
+        num_epochs = 1,
+        shuffle = False)
 
     predictions = classifier.predict(input_fn=pred_input_fn)
     _, pred_scores = get_predictions(predictions)
@@ -244,7 +246,7 @@ def train_attack_model(classes, dataset=None, n_hidden=50, learning_rate=0.01, b
     return (attack_adv, shadow_pred_scores, target_pred_scores, shadow_membership, target_membership, shadow_class_labels, target_class_labels)
 
 
-def save_data(args):
+def save_data(args,perturbation_func=None, create_shadow_dataset = True, **kwargs):
     '''
     Saves randomly sampled
         args.target_data_size datapoints                            for training,
@@ -263,37 +265,61 @@ def save_data(args):
     if not os.path.exists(DATA_PATH):
         os.makedirs(DATA_PATH)
 
-    x = pickle.load(open('../dataset/' + args.train_dataset + '_features.p', 'rb'))
-    y = pickle.load(open('../dataset/' + args.train_dataset + '_labels.p', 'rb'))
+    x = pickle.load(open('../dataset/' + (args.source_dataset if 'source_dataset' in args else args.train_dataset) + '_features.p', 'rb'))
+    y = pickle.load(open('../dataset/' + (args.label_dataset if 'label_dataset' in args else args.train_dataset) + '_labels.p', 'rb'))
     x = np.array(x, dtype=np.float32)
     y = np.array(y, dtype=np.int32)
-    print(x.shape, y.shape)
 
     # assert if data is enough for sampling target data
     assert (len(x) >= (1 + gamma) * target_size)
-    x, train_x, y, train_y = train_test_split(x, y, test_size=target_size, stratify=y)
+    x, train_x, y, train_y = train_test_split(x, y, test_size=target_size, stratify=y, random_state=1)#np.random.randint(0,2**32 - 1)
     print("Training set size:  X: {}, y: {}".format(train_x.shape, train_y.shape))
-    x, test_x, y, test_y = train_test_split(x, y, test_size=int(gamma * target_size), stratify=y)
+    if x.shape[0]==int(gamma * target_size):
+        test_x, test_y = x,y
+        x,y = np.zeros((0,*x.shape[1:]),dtype=x.dtype),np.zeros((0,),dtype=y.dtype)
+    else:
+        x, test_x, y, test_y = train_test_split(x, y, test_size=int(gamma * target_size), stratify=y, random_state=2)#np.random.randint(0,2**32 - 1)
     print("Test set size:  X: {}, y: {}".format(test_x.shape, test_y.shape))
+    import pandas as pd
+    import hashlib
+    print('Fingerprint of unperturbed data')
+    print('train_x:',hashlib.sha256(pd.util.hash_pandas_object(pd.DataFrame(train_x), index=False).values).hexdigest(), 'with shape',train_x.shape)
+    print('train_y:',hashlib.sha256(pd.util.hash_pandas_object(pd.DataFrame(train_y), index=False).values).hexdigest(), 'with shape',train_y.shape)
+    print('test_x:',hashlib.sha256(pd.util.hash_pandas_object(pd.DataFrame(test_x), index=False).values).hexdigest(), 'with shape',test_x.shape)
+    print('test_y:',hashlib.sha256(pd.util.hash_pandas_object(pd.DataFrame(test_y), index=False).values).hexdigest(), 'with shape',test_y.shape)
+
+    # Perturbation
+    if perturbation_func is not None:
+        train_x = perturbation_func(train_x)
+        test_x = perturbation_func(test_x)
+        print('Fingerprints of perturbed data')
+        print('train_x:',hashlib.sha256(pd.util.hash_pandas_object(pd.DataFrame(train_x), index=False).values).hexdigest(), 'with shape',train_x.shape)
+        print('test_x:',hashlib.sha256(pd.util.hash_pandas_object(pd.DataFrame(test_x), index=False).values).hexdigest(), 'with shape',test_x.shape)
 
     # save target data
     print('Saving data for target model')
     np.savez(DATA_PATH + 'target_data.npz', train_x, train_y, test_x, test_y)
 
-    # assert if remaining data is enough for sampling shadow data
-    assert (len(x) >= (1 + gamma) * target_size)
 
     # save shadow data
-    for i in range(args.n_shadow):
-        print('Saving data for shadow model {}'.format(i))
-        train_x, test_x, train_y, test_y = train_test_split(x, y, train_size=target_size, test_size=int(gamma * target_size), stratify=y)
-        print("Training set size:  X: {}, y: {}".format(train_x.shape, train_y.shape))
-        print("Test set size:  X: {}, y: {}".format(test_x.shape, test_y.shape))
-        np.savez(DATA_PATH + 'shadow{}_data.npz'.format(i), train_x, train_y, test_x, test_y)
+    if create_shadow_dataset:
+        # assert if remaining data is enough for sampling shadow data
+        assert (len(x) >= (1 + gamma) * target_size)
+        for i in range(args.n_shadow):
+            print('Saving data for shadow model {}'.format(i))
+            train_x, test_x, train_y, test_y = train_test_split(x, y, train_size=target_size, test_size=int(gamma * target_size), stratify=y, random_state=np.random.randint(0,2**32 - 1))
+            print("Training set size:  X: {}, y: {}".format(train_x.shape, train_y.shape))
+            print("Test set size:  X: {}, y: {}".format(test_x.shape, test_y.shape))
+
+            if perturbation_func is not None:
+                train_x = perturbation_func(train_x)
+                test_x = perturbation_func(test_x)
+
+            np.savez(DATA_PATH + 'shadow{}_data.npz'.format(i), train_x, train_y, test_x, test_y)
 
 
-def load_data(data_name, args):
-    DATA_PATH = 'data/' + args.train_dataset + '/'
+def load_data(data_name, args, PATH_TO_PWD=''):
+    DATA_PATH = PATH_TO_PWD+'data/' + args.train_dataset + '/'
     target_size = args.target_data_size
     gamma = args.target_test_train_ratio
     with np.load(DATA_PATH + data_name) as f:
@@ -335,13 +361,15 @@ def shokri_membership_inference(args, attack_test_x, attack_test_y, test_classes
         classes=(train_classes, test_classes))
 
 
-def yeom_membership_inference(per_instance_loss, membership, train_loss, test_loss=None):
-    print('-' * 10 + 'YEOM\'S MEMBERSHIP INFERENCE' + '-' * 10 + '\n')
+def yeom_membership_inference(per_instance_loss, membership, train_loss, test_loss=None,not_verbose=True):
+    if not not_verbose:
+        print('-' * 10 + 'YEOM\'S MEMBERSHIP INFERENCE' + '-' * 10 + '\n')
     if test_loss == None:
         pred_membership = np.where(per_instance_loss <= train_loss, 1, 0)
     else:
         pred_membership = np.where(stats.norm(0, train_loss).pdf(per_instance_loss) >= stats.norm(0, test_loss).pdf(per_instance_loss), 1, 0)
-    prety_print_result(membership, pred_membership)
+    if not not_verbose:
+        prety_print_result(membership, pred_membership)
     return pred_membership
 
 
@@ -421,9 +449,20 @@ def get_merlin_ratio(true_x, true_y, classifier, per_instance_loss, noise_params
 def yeom_attribute_inference(true_x, true_y, classifier, membership, features, train_loss, test_loss=None):
     print('-' * 10 + 'YEOM\'S ATTRIBUTE INFERENCE' + '-' * 10 + '\n')
     pred_membership_all = []
+    pred_attribute_value_all = []
+    true_attribute_value_all = []
     for feature in features:
         orignial_attribute = np.copy(true_x[:, feature])
         low_value, high_value, true_attribute_value = get_attribute_variations(true_x, feature)
+
+        pred_input_fn = tf.compat.v1.estimator.inputs.numpy_input_fn(
+            x={'x': true_x},
+            num_epochs=1,
+            shuffle=False)
+        predictions = classifier.predict(input_fn=pred_input_fn)
+        _, mid_op = get_predictions(predictions)
+        mid_op = mid_op.astype('float32')
+        mid_op = log_loss(true_y, mid_op)
 
         true_x[:, feature] = low_value
         pred_input_fn = tf.compat.v1.estimator.inputs.numpy_input_fn(
@@ -457,8 +496,10 @@ def yeom_attribute_inference(true_x, true_y, classifier, membership, features, t
             pred_attribute_value = [np.argmax([low_prob * a, high_prob * b]) for a, b in zip(low_mem, high_mem)]
             mask = [a | b for a, b in zip(low_mem, high_mem)]
 
-        pred_membership = mask & (pred_attribute_value ^ true_attribute_value ^ [1] * len(pred_attribute_value))
+        pred_membership = mask & (pred_attribute_value ^ true_attribute_value ^ [1] * len(pred_attribute_value)) # =  pred_attribute_value == true_attribute_value
         prety_print_result(membership, pred_membership)
         pred_membership_all.append(pred_membership)
+        pred_attribute_value_all.append(pred_attribute_value)
+        true_attribute_value_all.append(true_attribute_value)
         true_x[:, feature] = orignial_attribute
-    return pred_membership_all
+    return pred_membership_all, true_attribute_value_all, pred_attribute_value_all

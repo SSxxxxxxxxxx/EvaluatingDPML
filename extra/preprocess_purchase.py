@@ -7,6 +7,8 @@ from sklearn.cluster import KMeans
 IT_NUM = 100
 
 
+
+
 def normalizeDataset(X):
     '''
     Normalize each row of the dataset X
@@ -73,7 +75,7 @@ def populate():
 
     :return: None
     '''
-    print('-'*10, 'populate','-'*10)
+    print('-' * 10, 'populate', '-' * 10)
     fp = open('transactions.csv')
     cnt, cust_cnt, it_cnt = 0, 0, 0
     # Dict mapping item to index of item in customer-values
@@ -135,7 +137,7 @@ def make_dataset():
 
     :return: None
     '''
-    print('-'*10,'Converting and labeling data','-'*10)
+    print('-' * 10, 'Converting and labeling data', '-' * 10)
     dataset = []
     customer, items = pickle.load(open('transactions_dump.p', 'rb'))
     for key, val in customer.items():
@@ -151,7 +153,12 @@ def make_dataset():
     pickle.dump(X.labels_, open('purchase_100_labels.p', 'wb'))
 
 
-# Note: transactions.csv file can be downloaded from https://www.kaggle.com/c/acquire-valued-shoppers-challenge/data
-# populate1() # 100 'most' frequent items
-populate()  # first 100 frequent items -- generates the data set used in the experiments
-make_dataset()
+def main():
+    # Note: transactions.csv file can be downloaded from https://www.kaggle.com/c/acquire-valued-shoppers-challenge/data
+    # populate1() # 100 'most' frequent items
+    populate()  # first 100 frequent items -- generates the data set used in the experiments
+    make_dataset()
+
+
+if __name__ == '__main__':
+    main()

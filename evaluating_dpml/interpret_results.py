@@ -41,6 +41,7 @@ def pretty_position(X, Y, pos):
 
 
 def plot_advantage(result):
+	print(DATA_PATH+MODEL+'no_privacy_'+str(args.l2_ratio)+'.p')
 	train_acc, baseline_acc, train_loss, membership, _, shokri_mem_confidence, _, per_instance_loss, _, per_instance_loss_all, _ = pickle.load(open(DATA_PATH+MODEL+'no_privacy_'+str(args.l2_ratio)+'.p', 'rb'))
 	print(train_acc, baseline_acc)
 	color = 0.1
@@ -51,10 +52,11 @@ def plot_advantage(result):
 		for eps in EPSILONS:
 			test_acc_d, yeom_mem_adv_d, yeom_attr_adv_d, shokri_mem_adv_d = [], [], [], []
 			for run in RUNS:
-				train_acc, test_acc, train_loss, membership, shokri_mem_adv, shokri_mem_confidence, yeom_mem_adv, per_instance_loss, yeom_attr_adv, per_instance_loss, features = result[dp][eps][run]
+				train_acc, test_acc, train_loss, membership, shokri_mem_adv, shokri_mem_confidence, yeom_mem_adv, per_instance_loss, yeom_attr_adv, pred_membership_all, features = result[dp][eps][run]
 				test_acc_d.append(test_acc)
 				yeom_mem_adv_d.append(yeom_mem_adv) # adversary's advantage using membership inference attack of Yeom et al.
 				shokri_mem_adv_d.append(shokri_mem_adv) # adversary's advantage using membership inference attack of Shokri et al.
+
 				yeom_attr_adv_d.append(np.mean(yeom_attr_adv)) # adversary's advantage using attribute inference attack of Yeom et al.
 			test_acc_mean.append(np.mean(test_acc_d))
 			test_acc_std.append(np.std(test_acc_d))
@@ -75,6 +77,7 @@ def plot_advantage(result):
 				elif args.plot == 'yeom_mi':
 					print(dp, eps, np.mean(yeom_mem_adv_d), np.std(yeom_mem_adv_d))
 		if args.plot == 'acc':
+			print(dp,baseline_acc,test_acc_mean)
 			y[dp] = (baseline_acc - test_acc_mean) / baseline_acc
 			plt.errorbar(EPSILONS, (baseline_acc - test_acc_mean) / baseline_acc, yerr=test_acc_std, color=str(color), fmt='.-', capsize=2, label=DP_LABELS[DP.index(dp)])
 		elif args.plot == 'shokri_mi':
@@ -101,7 +104,7 @@ def plot_advantage(result):
 		plt.annotate("$\epsilon$-DP Bound", pretty_position(EPS, theoretical_limit(EPS), 9), textcoords="offset points", xytext=(5,0), ha='left')
 		plt.yticks(np.arange(0, 0.26, step=0.05))
 		plt.ylabel('Privacy Leakage')
-
+	print(y)
 	plt.annotate("RDP", pretty_position(EPSILONS, y["rdp_"], 8), textcoords="offset points", xytext=(-10, 0), ha='right')
 	plt.annotate("zCDP", pretty_position(EPSILONS, y["zcdp_"], 7), textcoords="offset points", xytext=(8, 12), ha='right')
 	plt.annotate("AC", pretty_position(EPSILONS, y["adv_cmp_"], -4), textcoords="offset points", xytext=(0, -10), ha='left')
@@ -243,6 +246,17 @@ def members_revealed_fixed_threshold(result):
 	if args.venn == 1:
 		generate_venn(membership, preds)
 
+def main(args):
+	DATA_PATH = 'results/' + str(args.dataset) + '/'
+	MODEL = str(args.model) + '_'
+
+	result = get_data()
+	if args.function == 1:
+		plot_advantage(result)  # plot the utility and privacy loss graphs
+	elif args.function == 2:
+		members_revealed_fixed_fpr(result)  # return the number of members revealed for different FPR rates
+	else:
+		members_revealed_fixed_threshold(result)
 
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser()
@@ -257,7 +271,7 @@ if __name__ == '__main__':
 	args = parser.parse_args()
 	print(vars(args))
 
-	DATA_PATH = '../results/' + str(args.dataset) + '/'
+	DATA_PATH = 'results/' + str(args.dataset) + '/'
 	MODEL = str(args.model) + '_'
 
 	result = get_data()

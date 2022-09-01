@@ -77,9 +77,9 @@ def get_attribute_variations(data, feature):
         low, high = np.unique(data[:, feature])
         pivot = (low + high) / 2
     else:
-        pivot = np.quantile(np.unique(data[:, feature]), 0.5)
-        low = np.quantile(np.unique(data[:, feature]), 0.25)
-        high = np.quantile(np.unique(data[:, feature]), 0.75)
+        pivot = np.quantile(data[:, feature], 0.5)
+        low = np.quantile(data[:, feature], 0.25)
+        high = np.quantile(data[:, feature], 0.75)
     true_attribute_value = np.where(data[:, feature] <= pivot, 0, 1)
     return low, high, true_attribute_value
 
