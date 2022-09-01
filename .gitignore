@@ -1,6 +1,8 @@
 model/
 results/
+results.old/
 data/
+data.old/
 dataset/
 log/
 ENV/
